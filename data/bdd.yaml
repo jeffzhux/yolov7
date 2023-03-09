@@ -1,0 +1,14 @@
+
+# train and val data as 1) directory: path/images/, 2) file: path/images.txt, or 3) list: [path1/images/, path2/images/]
+train: ../data/BDD100K/images/train  # 118287 images
+val: ../data/BDD100K/images/valid  # 5000 images
+test: ../data/BDD100K/images/valid  # 20288 of 40670 images, submit to https://competitions.codalab.org/competitions/20794
+
+# number of classes
+nc: 4
+seg_nc: 5
+# class names
+names: ['person', 'bicycle', 'car', 'motorcycle']
+
+obj_category: {'person': 0, 'bicycle': 1, 'car': 2, 'motorcycle': 3}
+seg_category: {'drivable area': 0, 'alternative': 1, 'single': 2, 'double':3,'dashed':4}
