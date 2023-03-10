@@ -622,7 +622,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         hyp = self.hyp
         mosaic = self.mosaic and random.random() < hyp['mosaic']
-
+        
         if mosaic:
             # Load mosaic
             if random.random() < 0.8:
@@ -630,7 +630,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             else:
                 img, labels, seg = load_mosaic9(self, index)
             shapes = None
-
+            
             # MixUp https://arxiv.org/pdf/1710.09412.pdf
             if random.random() < hyp['mixup']:
                 if random.random() < 0.8:
@@ -639,7 +639,6 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     img2, labels2, seg2 = load_mosaic9(self, random.randint(0, len(self.labels) - 1))
                 r = np.random.beta(8.0, 8.0)  # mixup ratio, alpha=beta=8.0
                 img = (img * r + img2 * (1 - r)).astype(np.uint8)
-                seg = (seg * r + seg2 * (1 - r)).astype(np.uint8)
                 labels = np.concatenate((labels, labels2), 0)
 
         else:
@@ -655,7 +654,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             labels = self.labels[index].copy()
             if labels.size:  # normalized xywh to pixel xyxy format
                 labels[:, 1:] = xywhn2xyxy(labels[:, 1:], ratio[0] * w, ratio[1] * h, padw=pad[0], padh=pad[1])
-
+        
         if self.augment:
             # Augment imagespace
             if not mosaic:
@@ -687,7 +686,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     if len(sample_labels) == 0:
                         break
                 labels = pastein(img, labels, sample_labels, sample_images, sample_masks)
-
+        
         nL = len(labels)  # number of labels
         if nL:
             labels[:, 1:5] = xyxy2xywh(labels[:, 1:5])  # convert xyxy to xywh
@@ -716,11 +715,11 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # Convert
         img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
         img = np.ascontiguousarray(img)
-
+                
         seg = seg[:,:,0]
         mask = seg[..., None] == np.arange(self.data_dict['seg_nc'])
         seg_onehot = mask.astype(dtype=np.float32)
-        seg_onehot = seg_onehot[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
+        seg_onehot = seg_onehot.transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
         seg_onehot = np.ascontiguousarray(seg_onehot)
 
         return torch.from_numpy(img), labels_out, self.img_files[index], shapes, torch.from_numpy(seg_onehot)
@@ -1230,7 +1229,7 @@ def load_mosaic9(self, index):
     for i, index in enumerate(indices):
         # Load image
         img, _, (h, w) = load_image(self, index)
-        seg, _, _ = load_image(self, index)
+        seg, _, _ = load_image(self, index, is_seg=True)
         # place img in img9
         if i == 0:  # center
             img9 = np.full((s * 3, s * 3, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles

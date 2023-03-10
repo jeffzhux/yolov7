@@ -31,6 +31,21 @@ cv2.setNumThreads(0)  # prevent OpenCV from multithreading (incompatible with Py
 os.environ['NUMEXPR_MAX_THREADS'] = str(min(os.cpu_count(), 8))  # NumExpr max threads
 
 
+mask_color = np.array([[255,255,255], [255,0,0], [0,255,0], [0,0,255], [255,0,255], [255,255,0], [0,255,255]])
+
+def cover2RGB(img, masks):
+    if isinstance(img, torch.Tensor):
+        img = img.cpu().float().numpy()
+    if isinstance(masks, torch.Tensor):
+        masks = masks.cpu().numpy()
+
+    for i in np.unique(masks):
+        if i == 0:
+            continue
+        img[masks==i] = mask_color[i]
+
+    return img
+
 def set_logging(rank=-1):
     logging.basicConfig(
         format="%(message)s",
@@ -915,3 +930,8 @@ def increment_path(path, exist_ok=True, sep=''):
         i = [int(m.groups()[0]) for m in matches if m]  # indices
         n = max(i) + 1 if i else 2  # increment number
         return f"{path}{sep}{n}"  # update path
+
+def is_ascii(s=''):
+    # Is string composed of all ASCII (no UTF) characters? (note str().isascii() introduced in python 3.7)
+    s = str(s)  # convert list, tuple, None, etc. to str
+    return len(s.encode().decode('ascii', 'ignore')) == len(s)

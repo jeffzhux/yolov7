@@ -6,9 +6,9 @@ test: ../data/BDD100K/images/valid  # 20288 of 40670 images, submit to https://c
 
 # number of classes
 nc: 4
-seg_nc: 5
+seg_nc: 6
 # class names
 names: ['person', 'bicycle', 'car', 'motorcycle']
 
 obj_category: {'person': 0, 'bicycle': 1, 'car': 2, 'motorcycle': 3}
-seg_category: {'drivable area': 0, 'alternative': 1, 'single': 2, 'double':3,'dashed':4}
+seg_category: {'background': 0, 'drivable area': 1, 'alternative': 2, 'single': 3, 'double': 4,'dashed': 5}

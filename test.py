@@ -14,7 +14,7 @@ from utils.datasets import create_dataloader
 from utils.general import coco80_to_coco91_class, check_dataset, check_file, check_img_size, check_requirements, \
     box_iou, non_max_suppression, scale_coords, xyxy2xywh, xywh2xyxy, set_logging, increment_path, colorstr
 from utils.metrics import ap_per_class, ConfusionMatrix
-from utils.plots import plot_images, output_to_target, plot_study_txt
+from utils.plots import plot_images, output_to_target, plot_study_txt, plot_images_mask
 from utils.torch_utils import select_device, time_synchronized, TracedModel
 
 
@@ -127,6 +127,13 @@ def test(data,
             out = non_max_suppression(out, conf_thres=conf_thres, iou_thres=iou_thres, labels=lb, multi_label=True)
             t1 += time_synchronized() - t
 
+        # Masks
+        proto_out = torch.nn.functional.interpolate(train_out[1], size = (height, width), mode='bilinear', align_corners=False)
+        _, max_proto_out = torch.max(proto_out, 1)
+        _, max_gt_masks = torch.max(masks, 1)
+        max_proto_out = max_proto_out.unsqueeze(1)
+        max_gt_masks = max_gt_masks.unsqueeze(1)
+
         # Statistics per image
         for si, pred in enumerate(out):
             labels = targets[targets[:, 0] == si, 1:]
@@ -139,6 +146,13 @@ def test(data,
                 if nl:
                     stats.append((torch.zeros(0, niou, dtype=torch.bool), torch.Tensor(), torch.Tensor(), tcls))
                 continue
+            
+            # Masks
+            # gt_masks = masks[si].unsqueeze(0)
+            # proto_out = train_out[1][si].unsqueeze(0)
+            # proto_out = torch.nn.functional.interpolate(proto_out, size = (height, width), mode='bilinear', align_corners=False)
+            # _, max_proto_out = torch.max(proto_out, 1)
+            # _, max_gt_masks = torch.max(gt_masks, 1)
 
             # Predictions
             predn = pred.clone()
@@ -209,17 +223,25 @@ def test(data,
                                 correct[pi[j]] = ious[j] > iouv  # iou_thres is 1xn
                                 if len(detected) == nl:  # all targets already located in image
                                     break
-
+            
             # Append statistics (correct, conf, pcls, tcls)
             stats.append((correct.cpu(), pred[:, 4].cpu(), pred[:, 5].cpu(), tcls))
+            
 
         # Plot images
-        if plots and batch_i < 3:
+        # if plots and batch_i < 3:
+        #     f = save_dir / f'test_batch{batch_i}_labels.jpg'  # labels
+        #     Thread(target=plot_images, args=(img, targets, paths, f, names), daemon=True).start()
+        #     f = save_dir / f'test_batch{batch_i}_pred.jpg'  # predictions
+        #     Thread(target=plot_images, args=(img, output_to_target(out), paths, f, names), daemon=True).start()
+
+        if True: #plots and batch_i < 3:
             f = save_dir / f'test_batch{batch_i}_labels.jpg'  # labels
-            Thread(target=plot_images, args=(img, targets, paths, f, names), daemon=True).start()
+
+            Thread(target=plot_images_mask, args=(img, targets, max_gt_masks, paths, f, names), daemon=True).start()
             f = save_dir / f'test_batch{batch_i}_pred.jpg'  # predictions
-            Thread(target=plot_images, args=(img, output_to_target(out), paths, f, names), daemon=True).start()
-        
+            Thread(target=plot_images_mask, args=(img, output_to_target(out), max_proto_out, paths, f, names), daemon=True).start()
+
     # Compute statistics
     stats = [np.concatenate(x, 0) for x in zip(*stats)]  # to numpy
     if len(stats) and stats[0].any():
@@ -286,6 +308,7 @@ def test(data,
     maps = np.zeros(nc) + map
     for i, c in enumerate(ap_class):
         maps[c] = ap[i]
+
     return (mp, mr, map50, map, *(loss.cpu() / len(dataloader)).tolist()), maps, t
 
 
