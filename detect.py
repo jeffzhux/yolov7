@@ -2,11 +2,12 @@ import argparse
 import time
 from pathlib import Path
 
+import csv
 import cv2
 import torch
 import torch.backends.cudnn as cudnn
 from numpy import random
-
+import numpy as np
 from models.experimental import attempt_load
 from utils.datasets import LoadStreams, LoadImages
 from utils.general import check_img_size, check_requirements, check_imshow, non_max_suppression, apply_classifier, \
@@ -23,8 +24,15 @@ def detect(save_img=False):
 
     # Directories
     save_dir = Path(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))  # increment run
+    save_obj = save_dir / 'object_detections'
+    save_seg = save_dir / 'segmentation'
+    print(f'save dir : {save_dir}')
+    
     (save_dir / 'labels' if save_txt else save_dir).mkdir(parents=True, exist_ok=True)  # make dir
-
+    (save_seg).mkdir(parents=True, exist_ok=True)  # make dir
+    (save_obj).mkdir(parents=True, exist_ok=True)  # make dir
+    if save_txt:
+        obj_save_list = []
     # Initialize
     set_logging()
     device = select_device(opt.device)
@@ -53,7 +61,9 @@ def detect(save_img=False):
         view_img = check_imshow()
         cudnn.benchmark = True  # set True to speed up constant image size inference
         dataset = LoadStreams(source, img_size=imgsz, stride=stride)
+        print('Load Streams')
     else:
+        print('Load Image')
         dataset = LoadImages(source, img_size=imgsz, stride=stride)
 
     # Get names and colors
@@ -67,7 +77,7 @@ def detect(save_img=False):
     old_img_b = 1
 
     t0 = time.time()
-    for path, img, im0s, vid_cap in dataset:
+    for path, img, im0s, vid_cap, shapes in dataset:
         img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
@@ -85,26 +95,43 @@ def detect(save_img=False):
         # Inference
         t1 = time_synchronized()
         with torch.no_grad():   # Calculating gradients would cause a GPU memory leak
-            pred = model(img, augment=opt.augment)[0]
+            det_pred, pred = model(img, augment=opt.augment)
+            seg_pred = pred[1]
         t2 = time_synchronized()
+        
+        # mask
+        h, w = img.size()[-2:]
+        height, width = shapes[0]
+        pad_w, pad_h = shapes[1][1]
+        pad_w, pad_h = int(pad_w), int(pad_h)
+
+        seg_pred = torch.nn.functional.interpolate(seg_pred, size = (h, w), mode='bilinear')
+        seg_pred = seg_pred[:, :, pad_h:(height-pad_h),pad_w:(width-pad_w)]
+        seg_mask = torch.nn.functional.interpolate(seg_pred, size = (height, width), mode='bilinear')
+        _, seg_mask = torch.max(seg_mask, 1)
+
+        seg_mask = seg_mask.int().squeeze().cpu().numpy()
+        seg_mask = np.expand_dims(seg_mask, axis=2)
+        assert seg_mask.shape[0] != 1, f'seg_mask {seg_mask.shape}'
 
         # Apply NMS
-        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+        det_pred = non_max_suppression(det_pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
         t3 = time_synchronized()
 
         # Apply Classifier
         if classify:
-            pred = apply_classifier(pred, modelc, img, im0s)
+            det_pred = apply_classifier(det_pred, modelc, img, im0s)
 
         # Process detections
-        for i, det in enumerate(pred):  # detections per image
+        for i, det in enumerate(det_pred):  # detections per image
             if webcam:  # batch_size >= 1
                 p, s, im0, frame = path[i], '%g: ' % i, im0s[i].copy(), dataset.count
             else:
                 p, s, im0, frame = path, '', im0s, getattr(dataset, 'frame', 0)
 
             p = Path(p)  # to Path
-            save_path = str(save_dir / p.name)  # img.jpg
+            save_obj_path = str(save_obj / p.name)  # img.jpg
+            save_seg_path = str(save_seg / (p.name.split('.')[0] + '.png'))
             txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # img.txt
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
             if len(det):
@@ -119,8 +146,11 @@ def detect(save_img=False):
                 # Write results
                 for *xyxy, conf, cls in reversed(det):
                     if save_txt:  # Write to file
-                        xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
-                        line = (cls, *xywh, conf) if opt.save_conf else (cls, *xywh)  # label format
+                        xywh = xyxy2xywh(torch.tensor(xyxy).view(1, 4)).long()
+                        xywh_gn = (xywh / gn).view(-1).tolist()  # normalized xywh
+                        line = (cls, *xywh_gn, conf) if opt.save_conf else (cls, *xywh_gn)  # label format
+                        obj_save_list.append([p.name, cls.item(), *xywh.view(-1).tolist(), conf.item()])
+
                         with open(txt_path + '.txt', 'a') as f:
                             f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
@@ -139,11 +169,13 @@ def detect(save_img=False):
             # Save results (image with detections)
             if save_img:
                 if dataset.mode == 'image':
-                    cv2.imwrite(save_path, im0)
-                    print(f" The image with the result is saved in: {save_path}")
+                    cv2.imwrite(save_obj_path, im0)
+                    cv2.imwrite(save_seg_path, seg_mask)
+                    print(f" The image with the result is saved in: {save_obj_path}")
+                    print(f" The segmentation image with the result is saved in: {save_seg_path}")
                 else:  # 'video' or 'stream'
-                    if vid_path != save_path:  # new video
-                        vid_path = save_path
+                    if vid_path != save_obj_path:  # new video
+                        vid_path = save_obj_path
                         if isinstance(vid_writer, cv2.VideoWriter):
                             vid_writer.release()  # release previous video writer
                         if vid_cap:  # video
@@ -155,6 +187,12 @@ def detect(save_img=False):
                             save_path += '.mp4'
                         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
                     vid_writer.write(im0)
+        
+    if save_txt:
+        with open(str(save_dir / 'submission.csv'), 'w', newline='') as f:
+            write = csv.writer(f)
+            write.writerow(['image_filename', 'label_id', 'x', 'y', 'w', 'h', 'confidence'])
+            write.writerows(obj_save_list)
 
     if save_txt or save_img:
         s = f"\n{len(list(save_dir.glob('labels/*.txt')))} labels saved to {save_dir / 'labels'}" if save_txt else ''

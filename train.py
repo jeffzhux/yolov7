@@ -30,7 +30,7 @@ from utils.general import labels_to_class_weights, increment_path, labels_to_ima
     fitness, strip_optimizer, get_latest_run, check_dataset, check_file, check_git_status, check_img_size, \
     check_requirements, print_mutation, set_logging, one_cycle, colorstr
 from utils.google_utils import attempt_download
-from utils.loss import ComputeLoss, ComputeSegLoss, ComputeLossOTA
+from utils.loss import ComputeLoss, ComputeSegLoss, ComputeSegLossOTA, ComputeLossOTA
 from utils.plots import plot_images, plot_labels, plot_results, plot_evolution
 from utils.torch_utils import ModelEMA, select_device, intersect_dicts, torch_distributed_zero_first, is_parallel
 from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
@@ -297,8 +297,8 @@ def train(hyp, opt, device, tb_writer=None):
     results = (0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls)
     scheduler.last_epoch = start_epoch - 1  # do not move
     scaler = amp.GradScaler(enabled=cuda)
-    compute_loss_ota = ComputeLossOTA(model)  # init loss class
-    compute_loss = ComputeSegLoss(model)  # init loss class
+    compute_loss_ota = ComputeSegLossOTA(model, opt.cfg)  # init loss class
+    compute_loss = ComputeSegLoss(model, opt.cfg)  # init loss class
     logger.info(f'Image sizes {imgsz} train, {imgsz_test} test\n'
                 f'Using {dataloader.num_workers} dataloader workers\n'
                 f'Logging results to {save_dir}\n'
@@ -363,7 +363,10 @@ def train(hyp, opt, device, tb_writer=None):
                 # if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
                 #     loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs)  # loss scaled by batch_size
                 # else:
-                loss, loss_items = compute_loss(pred, targets.to(device), masks = masks.to(device).float())  # loss scaled by batch_size
+                if 'loss_ota' not in hyp or hyp['loss_ota'] == 1:
+                    loss, loss_items = compute_loss_ota(pred, targets.to(device), imgs, masks.to(device))  # loss scaled by batch_size
+                else:
+                    loss, loss_items = compute_loss(pred, targets.to(device), masks = masks.to(device).float())  # loss scaled by batch_size
                 if rank != -1:
                     loss *= opt.world_size  # gradient averaged between devices in DDP mode
                 if opt.quad:
@@ -402,7 +405,7 @@ def train(hyp, opt, device, tb_writer=None):
                             
             # end batch ------------------------------------------------------------------------------------------------
         # end epoch ----------------------------------------------------------------------------------------------------
-
+            
         # Scheduler
         lr = [x['lr'] for x in optimizer.param_groups]  # for tensorboard
         scheduler.step()

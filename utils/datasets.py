@@ -188,15 +188,19 @@ class LoadImages:  # for inference
             img0 = cv2.imread(path)  # BGR
             assert img0 is not None, 'Image Not Found ' + path
             #print(f'image {self.count}/{self.nf} {path}: ', end='')
+        
 
         # Padded resize
-        img = letterbox(img0, self.img_size, stride=self.stride)[0]
+        (img, seg), ratio, pad = letterbox(img0, self.img_size, stride=self.stride)
+        h0, w0 = img0.shape[:2]
+        h, w = img.shape[:2]
+        shapes = (h0, w0), ((h / h0, w / w0), pad)
 
         # Convert
         img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
         img = np.ascontiguousarray(img)
 
-        return path, img, img0, self.cap
+        return path, img, img0, self.cap, shapes
 
     def new_video(self, path):
         self.frame = 0
@@ -1441,7 +1445,7 @@ def replicate(img, labels):
 
 def letterbox(combination, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleFill=False, scaleup=True, stride=32):
     
-    img, seg = combination
+    img, seg = combination if len(combination) == 2 else (combination, None)
     # Resize and pad image while meeting stride-multiple constraints
     shape = img.shape[:2]  # current shape [height, width]
     if isinstance(new_shape, int):
@@ -1456,6 +1460,7 @@ def letterbox(combination, new_shape=(640, 640), color=(114, 114, 114), auto=Tru
     ratio = r, r  # width, height ratios
     new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
     dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # wh padding
+    
     if auto:  # minimum rectangle
         dw, dh = np.mod(dw, stride), np.mod(dh, stride)  # wh padding
     elif scaleFill:  # stretch
@@ -1465,15 +1470,15 @@ def letterbox(combination, new_shape=(640, 640), color=(114, 114, 114), auto=Tru
 
     dw /= 2  # divide padding into 2 sides
     dh /= 2
-
     if shape[::-1] != new_unpad:  # resize
         img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
-        seg = cv2.resize(seg, new_unpad, interpolation=cv2.INTER_LINEAR)
+        if seg:
+            seg = cv2.resize(seg, new_unpad, interpolation=cv2.INTER_LINEAR)
     top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
     left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
     img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
-    seg = cv2.copyMakeBorder(seg, top, bottom, left, right, cv2.BORDER_CONSTANT, value=0)  # add border
-    
+    if seg is not None:  
+        seg = cv2.copyMakeBorder(seg, top, bottom, left, right, cv2.BORDER_CONSTANT, value=0)  # add border
     return (img, seg), ratio, (dw, dh)
 
 

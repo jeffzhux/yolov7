@@ -3,6 +3,7 @@ nc: 4  # number of classes
 segnc: 6 # 
 depth_multiple: 1.0  # model depth multiple
 width_multiple: 1.0  # layer channel multiple
+output_idx: [77, 97]
 
 # anchors
 anchors:
