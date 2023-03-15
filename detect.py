@@ -131,7 +131,7 @@ def detect(save_img=False):
 
             p = Path(p)  # to Path
             save_obj_path = str(save_obj / p.name)  # img.jpg
-            save_seg_path = str(save_seg / (p.name.split('.')[0] + '.png'))
+            save_seg_path = str(save_seg / (f'{p.name.split(".")[0]}.png'))
             txt_path = str(save_dir / 'labels' / p.stem) + ('' if dataset.mode == 'image' else f'_{frame}')  # img.txt
             gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
             if len(det):
