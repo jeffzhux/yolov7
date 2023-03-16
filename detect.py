@@ -109,11 +109,12 @@ def detect(save_img=False):
         seg_pred = seg_pred[:, :, pad_h:(height-pad_h),pad_w:(width-pad_w)]
         seg_mask = torch.nn.functional.interpolate(seg_pred, size = (height, width), mode='bilinear')
         _, seg_mask = torch.max(seg_mask, 1)
-
+        
         seg_mask = seg_mask.int().squeeze().cpu().numpy()
         seg_mask = np.expand_dims(seg_mask, axis=2)
+        
         assert seg_mask.shape[0] != 1, f'seg_mask {seg_mask.shape}'
-
+        assert np.all(seg_mask <= 5), f'seg_mask bigger then 5 '
         # Apply NMS
         det_pred = non_max_suppression(det_pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
         t3 = time_synchronized()
@@ -148,6 +149,7 @@ def detect(save_img=False):
                     if save_txt:  # Write to file
                         xywh = xyxy2xywh(torch.tensor(xyxy).view(1, 4)).long()
                         xywh_gn = (xywh / gn).view(-1).tolist()  # normalized xywh
+                        cls = cls + 1
                         line = (cls, *xywh_gn, conf) if opt.save_conf else (cls, *xywh_gn)  # label format
                         obj_save_list.append([p.name, cls.item(), *xywh.view(-1).tolist(), conf.item()])
 
